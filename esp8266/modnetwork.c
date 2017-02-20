@@ -118,6 +118,64 @@ STATIC mp_obj_t esp_connect(mp_uint_t n_args, const mp_obj_t *args) {
 }
 STATIC MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(esp_connect_obj, 1, 7, esp_connect);
 
+STATIC void wifi_wps_status_cb(int status) {
+    switch (status)
+    {
+        case 0:
+            if(!wifi_wps_disable()) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+                    "wps disable failed"));
+            }
+            wifi_station_connect();
+            break;
+        case 1:
+            nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+                "wps FAILED"));
+            break;
+        case 2:
+            nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+                "wps TIMEOUT"));
+            break;
+        case 3:
+            nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+                "wps WEP"));
+            break;
+        case 4:
+            nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+                "wps UNKNOWN"));
+            if(!wifi_wps_disable()) {
+                nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+                    "wps disable failed"));
+            }
+            break;
+    }
+}
+
+STATIC mp_obj_t esp_wps_connect(mp_obj_t self_in) {
+    require_if(self_in, STATION_IF);
+    if ((wifi_get_opmode() & STATION_MODE) == 0) {
+        nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+            "STA must be active"));
+    }
+
+    // 1 = push button mode
+    if (!wifi_wps_enable(1))
+        nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+            "Could not activate wps"));
+
+    if (!wifi_set_wps_cb((wps_st_cb_t)wifi_wps_status_cb))
+        nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+            "WPS callback failed"));
+
+    if (!wifi_wps_start())
+        nlr_raise(mp_obj_new_exception_msg(&mp_type_OSError,
+            "Could not start WPS"));
+
+    return mp_const_none;
+}
+
+STATIC MP_DEFINE_CONST_FUN_OBJ_1(esp_wps_connect_obj, esp_wps_connect);
+
 STATIC mp_obj_t esp_disconnect(mp_obj_t self_in) {
     require_if(self_in, STATION_IF);
     error_check(wifi_station_disconnect(), "Cannot disconnect from AP");
@@ -433,6 +491,7 @@ STATIC const mp_map_elem_t wlan_if_locals_dict_table[] = {
     { MP_OBJ_NEW_QSTR(MP_QSTR_disconnect), (mp_obj_t)&esp_disconnect_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_status), (mp_obj_t)&esp_status_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_scan), (mp_obj_t)&esp_scan_obj },
+    { MP_OBJ_NEW_QSTR(MP_QSTR_wps_begin), (mp_obj_t)&esp_wps_connect_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_isconnected), (mp_obj_t)&esp_isconnected_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_config), (mp_obj_t)&esp_config_obj },
     { MP_OBJ_NEW_QSTR(MP_QSTR_ifconfig), (mp_obj_t)&esp_ifconfig_obj },
